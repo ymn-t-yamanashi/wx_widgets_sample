@@ -23,6 +23,7 @@ defmodule Elixir3dGallery.GUI do
   @quads 0x0007
   @quad_strip 0x0008
   @triangle_fan 0x0006
+  @triangles 0x0004
 
   def start_link(_opts), do: GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
 
@@ -60,6 +61,7 @@ defmodule Elixir3dGallery.GUI do
        zoom: 7.0,
        auto_rotate: true,
        shape: :cube,
+       vrm_mesh: load_vrm_mesh(),
        dragging: false,
        last_mouse: {0, 0},
        rot: 0.0,
@@ -132,6 +134,7 @@ defmodule Elixir3dGallery.GUI do
         ?1 -> %{state | shape: :cube}
         ?2 -> %{state | shape: :sphere}
         ?3 -> %{state | shape: :cylinder}
+        ?4 -> %{state | shape: :vrm}
         ?a -> %{state | auto_rotate: !state.auto_rotate}
         ?A -> %{state | auto_rotate: !state.auto_rotate}
         ?r -> %{state | yaw: 38.0, pitch: -32.0, zoom: 7.0, rot: 0.0}
@@ -143,7 +146,7 @@ defmodule Elixir3dGallery.GUI do
     {:noreply, next}
   end
 
-  defp normalize_hotkey(key_code) when key_code in [?1, ?2, ?3], do: key_code
+  defp normalize_hotkey(key_code) when key_code in [?1, ?2, ?3, ?4], do: key_code
   defp normalize_hotkey(?a), do: ?a
   defp normalize_hotkey(?A), do: ?A
   defp normalize_hotkey(?r), do: ?r
@@ -176,7 +179,7 @@ defmodule Elixir3dGallery.GUI do
 
     :gl.pushMatrix()
     :gl.rotatef(state.rot, 0.0, 1.0, 0.0)
-    draw_shape(state.shape)
+    draw_shape(state.shape, state)
     :gl.popMatrix()
 
     :wxGLCanvas.swapBuffers(state.canvas)
@@ -218,9 +221,11 @@ defmodule Elixir3dGallery.GUI do
     :gl.end()
   end
 
-  defp draw_shape(:cube), do: draw_cube()
-  defp draw_shape(:sphere), do: draw_sphere(1.3, 18, 18)
-  defp draw_shape(:cylinder), do: draw_cylinder(1.0, 2.4, 24)
+  defp draw_shape(:cube, _state), do: draw_cube()
+  defp draw_shape(:sphere, _state), do: draw_sphere(1.3, 18, 18)
+  defp draw_shape(:cylinder, _state), do: draw_cylinder(1.0, 2.4, 24)
+  defp draw_shape(:vrm, %{vrm_mesh: nil}), do: draw_cube()
+  defp draw_shape(:vrm, %{vrm_mesh: mesh}), do: draw_vrm(mesh)
 
   defp draw_cube do
     :gl.begin(@quads)
@@ -328,4 +333,191 @@ defmodule Elixir3dGallery.GUI do
   end
 
   defp clamp(v, min_v, max_v), do: max(min_v, min(v, max_v))
+
+  defp draw_vrm(%{triangles: triangles}) do
+    :gl.begin(@triangles)
+    :gl.color3f(0.92, 0.83, 0.72)
+
+    Enum.each(triangles, fn {x, y, z} ->
+      :gl.vertex3f(x, y, z)
+    end)
+
+    :gl.end()
+  end
+
+  defp load_vrm_mesh do
+    vrm_path = Path.expand("test.vrm", File.cwd!())
+
+    with {:ok, bytes} <- File.read(vrm_path),
+         {:ok, gltf, bin} <- parse_glb(bytes),
+         {:ok, mesh} <- extract_scene_mesh(gltf, bin) do
+      mesh
+    else
+      _ -> nil
+    end
+  end
+
+  defp parse_glb(
+         <<"glTF", 2::little-unsigned-32, _len::little-unsigned-32, rest::binary>>
+       ) do
+    with {json, bin} <- parse_chunks(rest),
+         {:ok, gltf} <- Jason.decode(json) do
+      {:ok, gltf, bin}
+    else
+      _ -> {:error, :invalid_glb}
+    end
+  end
+
+  defp parse_glb(_), do: {:error, :invalid_glb}
+
+  defp parse_chunks(<<json_len::little-unsigned-32, "JSON", json::binary-size(json_len), rest::binary>>) do
+    padded = skip_padding(rest)
+
+    case padded do
+      <<bin_len::little-unsigned-32, "BIN\0", bin::binary-size(bin_len), _::binary>> -> {json, bin}
+      _ -> {json, <<>>}
+    end
+  end
+
+  defp skip_padding(<<0, tail::binary>>), do: skip_padding(tail)
+  defp skip_padding(bin), do: bin
+
+  defp extract_scene_mesh(gltf, bin) do
+    scene_index = Map.get(gltf, "scene", 0)
+    scenes = Map.get(gltf, "scenes", [])
+    nodes = Map.get(gltf, "nodes", [])
+
+    with scene when is_map(scene) <- Enum.at(scenes, scene_index),
+         root_nodes when is_list(root_nodes) <- Map.get(scene, "nodes") do
+      triangles =
+        Enum.flat_map(root_nodes, fn idx ->
+          collect_node_triangles(gltf, bin, nodes, idx, {0.0, 0.0, 0.0}, {1.0, 1.0, 1.0})
+        end)
+
+      case normalize_triangles(triangles) do
+        [] -> {:error, :mesh_not_found}
+        normalized -> {:ok, %{triangles: normalized}}
+      end
+    else
+      _ -> {:error, :mesh_not_found}
+    end
+  end
+
+  defp collect_node_triangles(gltf, bin, nodes, node_idx, parent_t, parent_s) do
+    case Enum.at(nodes, node_idx) do
+      node when is_map(node) ->
+        t = vec_add(parent_t, to_vec3(Map.get(node, "translation"), {0.0, 0.0, 0.0}))
+        s = vec_mul(parent_s, to_vec3(Map.get(node, "scale"), {1.0, 1.0, 1.0}))
+
+        own =
+          case Map.get(node, "mesh") do
+            mesh_idx when is_integer(mesh_idx) -> mesh_triangles(gltf, bin, mesh_idx, t, s)
+            _ -> []
+          end
+
+        children =
+          node
+          |> Map.get("children", [])
+          |> Enum.flat_map(&collect_node_triangles(gltf, bin, nodes, &1, t, s))
+
+        own ++ children
+
+      _ ->
+        []
+    end
+  end
+
+  defp mesh_triangles(gltf, bin, mesh_idx, t, s) do
+    meshes = Map.get(gltf, "meshes", [])
+
+    case Enum.at(meshes, mesh_idx) do
+      mesh when is_map(mesh) ->
+        mesh
+        |> Map.get("primitives", [])
+        |> Enum.flat_map(fn prim ->
+          with attrs when is_map(attrs) <- Map.get(prim, "attributes"),
+               pos_acc when is_integer(pos_acc) <- Map.get(attrs, "POSITION"),
+               idx_acc when is_integer(idx_acc) <- Map.get(prim, "indices"),
+               {:ok, positions} <- read_positions(gltf, bin, pos_acc),
+               {:ok, indices} <- read_indices(gltf, bin, idx_acc) do
+            Enum.map(indices, fn i ->
+              p = Enum.at(positions, i, {0.0, 0.0, 0.0})
+              vec_add(vec_mul(p, s), t)
+            end)
+          else
+            _ -> []
+          end
+        end)
+
+      _ ->
+        []
+    end
+  end
+
+  defp normalize_triangles([]), do: []
+  defp normalize_triangles(points) do
+    {minx, miny, minz, maxx, maxy, maxz} =
+      Enum.reduce(points, {1.0e9, 1.0e9, 1.0e9, -1.0e9, -1.0e9, -1.0e9}, fn {x, y, z},
+                                                                           {mnx, mny, mnz, mxx, mxy, mxz} ->
+        {min(mnx, x), min(mny, y), min(mnz, z), max(mxx, x), max(mxy, y), max(mxz, z)}
+      end)
+
+    cx = (minx + maxx) / 2.0
+    cy = (miny + maxy) / 2.0
+    cz = (minz + maxz) / 2.0
+    size = max(maxx - minx, max(maxy - miny, maxz - minz))
+    scale = if size > 0.0, do: 3.0 / size, else: 1.0
+    Enum.map(points, fn {x, y, z} -> {(x - cx) * scale, (y - cy) * scale, (z - cz) * scale} end)
+  end
+
+  defp to_vec3([x, y, z], _default), do: {x * 1.0, y * 1.0, z * 1.0}
+  defp to_vec3(_, default), do: default
+  defp vec_add({ax, ay, az}, {bx, by, bz}), do: {ax + bx, ay + by, az + bz}
+  defp vec_mul({ax, ay, az}, {bx, by, bz}), do: {ax * bx, ay * by, az * bz}
+
+  defp read_positions(gltf, bin, accessor_index) do
+    with {:ok, %{count: count, comp: 5126, type: "VEC3", data: data}} <-
+           read_accessor(gltf, bin, accessor_index) do
+      vals = for <<v::little-float-32 <- data>>, do: v
+      positions = vals |> Enum.chunk_every(3) |> Enum.take(count) |> Enum.map(&List.to_tuple/1)
+      {:ok, positions}
+    else
+      _ -> {:error, :bad_positions}
+    end
+  end
+
+  defp read_indices(gltf, bin, accessor_index) do
+    with {:ok, %{count: count, comp: comp, data: data}} <- read_accessor(gltf, bin, accessor_index) do
+      indices =
+        case comp do
+          5123 -> for <<v::little-unsigned-16 <- data>>, do: v
+          5125 -> for <<v::little-unsigned-32 <- data>>, do: v
+          _ -> []
+        end
+
+      {:ok, Enum.take(indices, count)}
+    else
+      _ -> {:error, :bad_indices}
+    end
+  end
+
+  defp read_accessor(gltf, bin, accessor_index) do
+    accessors = Map.get(gltf, "accessors", [])
+    views = Map.get(gltf, "bufferViews", [])
+
+    with accessor when is_map(accessor) <- Enum.at(accessors, accessor_index),
+         view_index when is_integer(view_index) <- Map.get(accessor, "bufferView"),
+         view when is_map(view) <- Enum.at(views, view_index) do
+      count = Map.get(accessor, "count", 0)
+      comp = Map.get(accessor, "componentType")
+      type = Map.get(accessor, "type")
+      acc_off = Map.get(accessor, "byteOffset", 0)
+      view_off = Map.get(view, "byteOffset", 0)
+      byte_len = Map.get(view, "byteLength", 0)
+      data = binary_part(bin, view_off + acc_off, byte_len - acc_off)
+      {:ok, %{count: count, comp: comp, type: type, data: data}}
+    else
+      _ -> {:error, :bad_accessor}
+    end
+  end
 end

@@ -453,12 +453,15 @@ defmodule Elixir3dGallery.GUI do
       mesh when is_map(mesh) ->
         mesh
         |> Map.get("primitives", [])
-        |> Enum.flat_map(fn prim ->
+        |> Enum.with_index()
+        |> Enum.flat_map(fn {prim, prim_idx} ->
           with attrs when is_map(attrs) <- Map.get(prim, "attributes"),
                pos_acc when is_integer(pos_acc) <- Map.get(attrs, "POSITION"),
                idx_acc when is_integer(idx_acc) <- Map.get(prim, "indices"),
                {:ok, positions} <- read_positions(gltf, bin, pos_acc),
-               colors <- read_colors(gltf, bin, Map.get(attrs, "COLOR_0"), length(positions)),
+               base_color <- material_base_color(gltf, Map.get(prim, "material"), prim_idx),
+               colors <-
+                 read_colors(gltf, bin, Map.get(attrs, "COLOR_0"), length(positions), base_color),
                {:ok, indices} <- read_indices(gltf, bin, idx_acc) do
             Enum.map(indices, fn i ->
               {x, y, z} = Enum.at(positions, i, {0.0, 0.0, 0.0})
@@ -519,9 +522,9 @@ defmodule Elixir3dGallery.GUI do
     end
   end
 
-  defp read_colors(_gltf, _bin, nil, count), do: List.duplicate({0.92, 0.83, 0.72}, count)
+  defp read_colors(_gltf, _bin, nil, count, base_color), do: List.duplicate(base_color, count)
 
-  defp read_colors(gltf, bin, accessor_index, count) do
+  defp read_colors(gltf, bin, accessor_index, count, base_color) do
     case read_accessor(gltf, bin, accessor_index) do
       {:ok, %{comp: 5126, type: "VEC3", data: data}} ->
         vals = for <<v::little-float-32 <- data>>, do: v
@@ -536,8 +539,47 @@ defmodule Elixir3dGallery.GUI do
         |> Enum.map(fn [r, g, b, _a] -> {r, g, b} end)
 
       _ ->
-        List.duplicate({0.92, 0.83, 0.72}, count)
+        List.duplicate(base_color, count)
     end
+  end
+
+  defp material_base_color(gltf, material_index, prim_idx) when is_integer(material_index) do
+    materials = Map.get(gltf, "materials", [])
+
+    case Enum.at(materials, material_index) do
+      mat when is_map(mat) ->
+        pbr = Map.get(mat, "pbrMetallicRoughness", %{})
+        has_texture = is_map(Map.get(pbr, "baseColorTexture"))
+
+        # baseColorTexture 未実装のため、テクスチャ依存マテリアルは白化回避色を使う
+        if has_texture do
+          fallback_primitive_color(prim_idx)
+        else
+          case Map.get(pbr, "baseColorFactor") do
+            [r, g, b, _a] -> {r * 1.0, g * 1.0, b * 1.0}
+            [r, g, b] -> {r * 1.0, g * 1.0, b * 1.0}
+            _ -> fallback_primitive_color(prim_idx)
+          end
+        end
+
+      _ ->
+        fallback_primitive_color(prim_idx)
+    end
+  end
+
+  defp material_base_color(_gltf, _, prim_idx), do: fallback_primitive_color(prim_idx)
+
+  defp fallback_primitive_color(i) do
+    palette = [
+      {0.95, 0.45, 0.40},
+      {0.35, 0.75, 0.95},
+      {0.95, 0.80, 0.30},
+      {0.42, 0.90, 0.55},
+      {0.75, 0.55, 0.95},
+      {0.35, 0.88, 0.88}
+    ]
+
+    Enum.at(palette, rem(i, length(palette)))
   end
 
   defp read_indices(gltf, bin, accessor_index) do

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+PROJECT_DIR="$REPO_ROOT/sum_wx"
+
+if [ ! -d "$PROJECT_DIR" ]; then
+  echo "[pre-commit] sum_wx が見つからないためチェックをスキップします。"
+  exit 0
+fi
+
+echo "[pre-commit] sum_wx で mix qa を実行します..."
+(
+  cd "$PROJECT_DIR"
+  mix qa
+)
+
+echo "[pre-commit] OK"

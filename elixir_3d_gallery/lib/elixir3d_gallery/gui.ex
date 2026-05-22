@@ -2,6 +2,11 @@ defmodule Elixir3dGallery.GUI do
   @moduledoc false
 
   use GenServer
+  require Record
+
+  Record.defrecord(:wx, Record.extract(:wx, from_lib: "wx/include/wx.hrl"))
+  Record.defrecord(:wxMouse, Record.extract(:wxMouse, from_lib: "wx/include/wx.hrl"))
+  Record.defrecord(:wxKey, Record.extract(:wxKey, from_lib: "wx/include/wx.hrl"))
 
   @timer_ms 16
   @color_buffer_bit 0x4000
@@ -34,11 +39,14 @@ defmodule Elixir3dGallery.GUI do
     :wxWindow.connect(canvas, :left_up)
     :wxWindow.connect(canvas, :motion)
     :wxWindow.connect(canvas, :mousewheel)
+    :wxWindow.connect(canvas, :char)
+    :wxWindow.connect(canvas, :char_hook)
     :wxWindow.connect(frame, :char_hook)
     :wxFrame.connect(frame, :close_window)
 
     timer_ref = Process.send_after(self(), :tick, @timer_ms)
     :wxFrame.show(frame)
+    :wxWindow.setFocus(canvas)
 
     {:ok,
      %{
@@ -47,8 +55,8 @@ defmodule Elixir3dGallery.GUI do
        canvas: canvas,
        gl_ctx: gl_ctx,
        timer_ref: timer_ref,
-       yaw: 28.0,
-       pitch: -20.0,
+       yaw: 38.0,
+       pitch: -32.0,
        zoom: 7.0,
        auto_rotate: true,
        shape: :cube,
@@ -67,13 +75,15 @@ defmodule Elixir3dGallery.GUI do
     {:noreply, state}
   end
 
-  def handle_info({:wx, _, _, _, {:wxMouse, :left_down, x, y, _}}, state),
-    do: {:noreply, %{state | dragging: true, last_mouse: {x, y}}}
+  def handle_info(wx(event: wxMouse(type: :left_down, x: x, y: y)), state) do
+    :wxWindow.setFocus(state.canvas)
+    {:noreply, %{state | dragging: true, last_mouse: {x, y}}}
+  end
 
-  def handle_info({:wx, _, _, _, {:wxMouse, :left_up, _, _, _}}, state),
+  def handle_info(wx(event: wxMouse(type: :left_up)), state),
     do: {:noreply, %{state | dragging: false}}
 
-  def handle_info({:wx, _, _, _, {:wxMouse, :motion, x, y, _}}, %{dragging: true} = state) do
+  def handle_info(wx(event: wxMouse(type: :motion, x: x, y: y)), %{dragging: true} = state) do
     {lx, ly} = state.last_mouse
     dx = x - lx
     dy = y - ly
@@ -87,26 +97,17 @@ defmodule Elixir3dGallery.GUI do
      }}
   end
 
-  def handle_info({:wx, _, _, _, {:wxMouse, :mousewheel, _, _, wheel}}, state) do
+  def handle_info(wx(event: wxMouse(type: :mousewheel, wheelRotation: wheel)), state) do
     step = if wheel > 0, do: -0.4, else: 0.4
     {:noreply, %{state | zoom: clamp(state.zoom + step, 2.0, 25.0)}}
   end
 
-  def handle_info({:wx, _, _, _, {:wxKey, :char_hook, key, _, _, _, _}}, state) do
-    next =
-      case key do
-        ?1 -> %{state | shape: :cube}
-        ?2 -> %{state | shape: :sphere}
-        ?3 -> %{state | shape: :cylinder}
-        ?a -> %{state | auto_rotate: !state.auto_rotate}
-        ?A -> %{state | auto_rotate: !state.auto_rotate}
-        ?r -> %{state | yaw: 28.0, pitch: -20.0, zoom: 7.0, rot: 0.0}
-        ?R -> %{state | yaw: 28.0, pitch: -20.0, zoom: 7.0, rot: 0.0}
-        _ -> state
-      end
-
-    :wxWindow.refresh(state.canvas)
-    {:noreply, next}
+  def handle_info(wx(event: wxKey(type: type, keyCode: key_code)), state)
+      when type in [:char, :char_hook, :key_down] do
+    case normalize_hotkey(key_code) do
+      nil -> {:noreply, state}
+      key -> handle_key_input(key, state)
+    end
   end
 
   def handle_info(:tick, state) do
@@ -124,6 +125,30 @@ defmodule Elixir3dGallery.GUI do
   end
 
   def handle_info(_, state), do: {:noreply, state}
+
+  defp handle_key_input(key, state) do
+    next =
+      case key do
+        ?1 -> %{state | shape: :cube}
+        ?2 -> %{state | shape: :sphere}
+        ?3 -> %{state | shape: :cylinder}
+        ?a -> %{state | auto_rotate: !state.auto_rotate}
+        ?A -> %{state | auto_rotate: !state.auto_rotate}
+        ?r -> %{state | yaw: 38.0, pitch: -32.0, zoom: 7.0, rot: 0.0}
+        ?R -> %{state | yaw: 38.0, pitch: -32.0, zoom: 7.0, rot: 0.0}
+        _ -> state
+      end
+
+    :wxWindow.refresh(state.canvas)
+    {:noreply, next}
+  end
+
+  defp normalize_hotkey(key_code) when key_code in [?1, ?2, ?3], do: key_code
+  defp normalize_hotkey(?a), do: ?a
+  defp normalize_hotkey(?A), do: ?A
+  defp normalize_hotkey(?r), do: ?r
+  defp normalize_hotkey(?R), do: ?R
+  defp normalize_hotkey(_), do: nil
 
   defp render(state) do
     :wxGLCanvas.setCurrent(state.canvas, state.gl_ctx)

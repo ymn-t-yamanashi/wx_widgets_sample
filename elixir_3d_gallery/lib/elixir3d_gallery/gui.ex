@@ -285,15 +285,21 @@ defmodule Elixir3dGallery.GUI do
   defp draw_cylinder(r, h, slices) do
     half = h / 2.0
 
-    :gl.begin(@quad_strip)
+    :gl.begin(@quads)
     :gl.color3f(0.96, 0.54, 0.2)
 
-    Enum.each(0..slices, fn i ->
-      ang = 2.0 * :math.pi() * i / slices
-      x = r * :math.cos(ang)
-      z = r * :math.sin(ang)
-      :gl.vertex3f(x, -half, z)
-      :gl.vertex3f(x, half, z)
+    Enum.each(0..(slices - 1), fn i ->
+      ang0 = 2.0 * :math.pi() * i / slices
+      ang1 = 2.0 * :math.pi() * (i + 1) / slices
+      x0 = r * :math.cos(ang0)
+      z0 = r * :math.sin(ang0)
+      x1 = r * :math.cos(ang1)
+      z1 = r * :math.sin(ang1)
+
+      :gl.vertex3f(x0, -half, z0)
+      :gl.vertex3f(x0, half, z0)
+      :gl.vertex3f(x1, half, z1)
+      :gl.vertex3f(x1, -half, z1)
     end)
 
     :gl.end()

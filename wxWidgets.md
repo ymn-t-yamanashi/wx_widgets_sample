@@ -36,3 +36,20 @@ Elixir で `:wx`（Erlang/OTP 同梱の wxWidgets バインディング）を使
 
 ## 次ステップ
 この計画に沿って、実際のプロジェクト作成とコード実装に進む。
+
+## 新規プロジェクトのハーネス導入
+
+`mix new` 直後に、次を実行すると `mix qa` ハーネスを自動導入できます。
+
+```bash
+./scripts/setup_elixir_harness.sh <mix_project_dir>
+```
+
+例:
+
+```bash
+mix new sample_app
+./scripts/setup_elixir_harness.sh sample_app
+cd sample_app
+mix qa
+```

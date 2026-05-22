@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+msg_file="$1"
+msg="$(cat "$msg_file")"
+
+# マージコミットなどの既定メッセージは許可
+if grep -Eq '^(Merge|Revert) ' "$msg_file"; then
+  exit 0
+fi
+
+# ひらがな・カタカナ・漢字のいずれかを含むことを要求
+if printf '%s' "$msg" | grep -Pq '[\p{Hiragana}\p{Katakana}\p{Han}]'; then
+  exit 0
+fi
+
+echo "[commit-msg] コミットメッセージに日本語（ひらがな/カタカナ/漢字）を含めてください。" >&2
+echo "例: \"機能追加: wx/OpenGL 3Dギャラリーの初期実装\"" >&2
+exit 1

@@ -101,7 +101,9 @@ defmodule SumWx.GUI do
     |> to_string()
     |> String.trim()
     |> case do
-      "" -> 0
+      "" ->
+        0
+
       str ->
         case Integer.parse(str) do
           {num, ""} -> num

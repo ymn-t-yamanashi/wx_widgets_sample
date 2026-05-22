@@ -3,6 +3,9 @@
 ## プロジェクト名
 `elixir_3d_gallery`
 
+## 運用ルール
+- コミットメッセージは必ず日本語で記述する
+
 
 ## 目的
 Elixir で `:wx`（Erlang/OTP 同梱の wxWidgets バインディング）を使い、3Dを表示する。  

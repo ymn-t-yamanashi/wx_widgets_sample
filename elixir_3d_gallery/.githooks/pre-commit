@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+if [ ! -f "$REPO_ROOT/mix.exs" ]; then
+  echo "[pre-commit] mix.exs が見つからないためスキップします。"
+  exit 0
+fi
+
+echo "[pre-commit] mix qa を実行します..."
+(
+  cd "$REPO_ROOT"
+  mix qa
+)
+
+echo "[pre-commit] OK"

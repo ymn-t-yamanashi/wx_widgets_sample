@@ -11,6 +11,10 @@ defmodule SumWx.MixProject do
     ]
   end
 
+  def cli do
+    [preferred_envs: [qa: :test]]
+  end
+
   # Run "mix help compile.app" to learn about applications.
   def application do
     [

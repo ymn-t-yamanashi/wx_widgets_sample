@@ -62,6 +62,7 @@ defmodule Elixir3dGallery.GUI do
        auto_rotate: true,
        shape: :cube,
        vrm_mesh: load_vrm_mesh(),
+       vrm_dl: nil,
        dragging: false,
        last_mouse: {0, 0},
        rot: 0.0,
@@ -156,6 +157,7 @@ defmodule Elixir3dGallery.GUI do
   defp render(state) do
     :wxGLCanvas.setCurrent(state.canvas, state.gl_ctx)
     state = maybe_init_gl(state)
+    state = maybe_build_vrm_display_list(state)
 
     {w, h} = :wxWindow.getClientSize(state.canvas)
     safe_h = max(h, 1)
@@ -225,6 +227,7 @@ defmodule Elixir3dGallery.GUI do
   defp draw_shape(:sphere, _state), do: draw_sphere(1.3, 18, 18)
   defp draw_shape(:cylinder, _state), do: draw_cylinder(1.0, 2.4, 24)
   defp draw_shape(:vrm, %{vrm_mesh: nil}), do: draw_cube()
+  defp draw_shape(:vrm, %{vrm_dl: dl}) when is_integer(dl) and dl > 0, do: :gl.callList(dl)
   defp draw_shape(:vrm, %{vrm_mesh: mesh}), do: draw_vrm(mesh)
 
   defp draw_cube do
@@ -336,13 +339,29 @@ defmodule Elixir3dGallery.GUI do
 
   defp draw_vrm(%{triangles: triangles}) do
     :gl.begin(@triangles)
-    :gl.color3f(0.92, 0.83, 0.72)
 
-    Enum.each(triangles, fn {x, y, z} ->
-      :gl.vertex3f(x, y, z)
+    Enum.each(triangles, fn
+      {x, y, z, r, g, b} ->
+        :gl.color3f(r, g, b)
+        :gl.vertex3f(x, y, z)
+
+      {x, y, z} ->
+        :gl.color3f(0.92, 0.83, 0.72)
+        :gl.vertex3f(x, y, z)
     end)
 
     :gl.end()
+  end
+
+  defp maybe_build_vrm_display_list(%{vrm_dl: dl} = state) when is_integer(dl) and dl > 0, do: state
+  defp maybe_build_vrm_display_list(%{vrm_mesh: nil} = state), do: state
+
+  defp maybe_build_vrm_display_list(%{vrm_mesh: mesh} = state) do
+    dl = :gl.genLists(1)
+    :gl.newList(dl, 0x1300)
+    draw_vrm(mesh)
+    :gl.endList()
+    %{state | vrm_dl: dl}
   end
 
   defp load_vrm_mesh do
@@ -439,10 +458,13 @@ defmodule Elixir3dGallery.GUI do
                pos_acc when is_integer(pos_acc) <- Map.get(attrs, "POSITION"),
                idx_acc when is_integer(idx_acc) <- Map.get(prim, "indices"),
                {:ok, positions} <- read_positions(gltf, bin, pos_acc),
+               colors <- read_colors(gltf, bin, Map.get(attrs, "COLOR_0"), length(positions)),
                {:ok, indices} <- read_indices(gltf, bin, idx_acc) do
             Enum.map(indices, fn i ->
-              p = Enum.at(positions, i, {0.0, 0.0, 0.0})
-              vec_add(vec_mul(p, s), t)
+              {x, y, z} = Enum.at(positions, i, {0.0, 0.0, 0.0})
+              {r, g, b} = Enum.at(colors, i, {0.92, 0.83, 0.72})
+              {tx, ty, tz} = vec_add(vec_mul({x, y, z}, s), t)
+              {tx, ty, tz, r, g, b}
             end)
           else
             _ -> []
@@ -457,8 +479,9 @@ defmodule Elixir3dGallery.GUI do
   defp normalize_triangles([]), do: []
   defp normalize_triangles(points) do
     {minx, miny, minz, maxx, maxy, maxz} =
-      Enum.reduce(points, {1.0e9, 1.0e9, 1.0e9, -1.0e9, -1.0e9, -1.0e9}, fn {x, y, z},
+      Enum.reduce(points, {1.0e9, 1.0e9, 1.0e9, -1.0e9, -1.0e9, -1.0e9}, fn p,
                                                                            {mnx, mny, mnz, mxx, mxy, mxz} ->
+        {x, y, z} = pos3(p)
         {min(mnx, x), min(mny, y), min(mnz, z), max(mxx, x), max(mxy, y), max(mxz, z)}
       end)
 
@@ -467,8 +490,18 @@ defmodule Elixir3dGallery.GUI do
     cz = (minz + maxz) / 2.0
     size = max(maxx - minx, max(maxy - miny, maxz - minz))
     scale = if size > 0.0, do: 3.0 / size, else: 1.0
-    Enum.map(points, fn {x, y, z} -> {(x - cx) * scale, (y - cy) * scale, (z - cz) * scale} end)
+    Enum.map(points, fn p ->
+      {x, y, z} = pos3(p)
+
+      case p do
+        {_, _, _, r, g, b} -> {(x - cx) * scale, (y - cy) * scale, (z - cz) * scale, r, g, b}
+        _ -> {(x - cx) * scale, (y - cy) * scale, (z - cz) * scale}
+      end
+    end)
   end
+
+  defp pos3({x, y, z}), do: {x, y, z}
+  defp pos3({x, y, z, _, _, _}), do: {x, y, z}
 
   defp to_vec3([x, y, z], _default), do: {x * 1.0, y * 1.0, z * 1.0}
   defp to_vec3(_, default), do: default
@@ -483,6 +516,27 @@ defmodule Elixir3dGallery.GUI do
       {:ok, positions}
     else
       _ -> {:error, :bad_positions}
+    end
+  end
+
+  defp read_colors(_gltf, _bin, nil, count), do: List.duplicate({0.92, 0.83, 0.72}, count)
+
+  defp read_colors(gltf, bin, accessor_index, count) do
+    case read_accessor(gltf, bin, accessor_index) do
+      {:ok, %{comp: 5126, type: "VEC3", data: data}} ->
+        vals = for <<v::little-float-32 <- data>>, do: v
+        vals |> Enum.chunk_every(3) |> Enum.take(count) |> Enum.map(&List.to_tuple/1)
+
+      {:ok, %{comp: 5126, type: "VEC4", data: data}} ->
+        vals = for <<v::little-float-32 <- data>>, do: v
+
+        vals
+        |> Enum.chunk_every(4)
+        |> Enum.take(count)
+        |> Enum.map(fn [r, g, b, _a] -> {r, g, b} end)
+
+      _ ->
+        List.duplicate({0.92, 0.83, 0.72}, count)
     end
   end
 

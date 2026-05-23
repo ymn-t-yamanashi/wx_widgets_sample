@@ -19,11 +19,15 @@ defmodule ElixirWxCameraViewer.GUI do
 
     :wxWindow.connect(panel, :size)
     :wxWindow.connect(panel, :char_hook)
+    :wxWindow.connect(panel, :key_down)
+    :wxWindow.connect(image_box, :char_hook)
+    :wxWindow.connect(image_box, :key_down)
     :wxWindow.connect(frame, :char_hook)
+    :wxWindow.connect(frame, :key_down)
     :wxFrame.connect(frame, :close_window)
 
     :wxFrame.show(frame)
-    :wxWindow.setFocus(panel)
+    :wxWindow.setFocus(image_box)
 
     timer = Process.send_after(self(), :refresh, @timer_ms)
 
@@ -56,7 +60,7 @@ defmodule ElixirWxCameraViewer.GUI do
     {:noreply, state}
   end
 
-  def handle_info(wxKey(type: type, keyCode: key_code), state)
+  def handle_info({:wx, _, _, _, wxKey(type: type, keyCode: key_code)}, state)
       when type in [:char, :char_hook, :key_down] do
     handle_key(key_code, state)
   end
@@ -97,10 +101,15 @@ defmodule ElixirWxCameraViewer.GUI do
     path = Path.join(File.cwd!(), "snapshot_#{ts}.png")
 
     msg =
-      case ElixirWxCameraViewer.Camera.save_snapshot(path) do
-        :ok -> "保存: #{path}"
-        {:error, :no_frame} -> "保存失敗: フレームなし"
-        _ -> "保存失敗"
+      case state.last_frame do
+        nil ->
+          "保存失敗: フレームなし"
+
+        %{data: data, width: w, height: h} ->
+          image = :wxImage.new(w, h, data)
+          ok = :wxImage.saveFile(image, to_charlist(path))
+          :wxImage.destroy(image)
+          if(ok, do: "保存: #{path}", else: "保存失敗")
       end
 
     {:noreply, put_status(state, msg)}

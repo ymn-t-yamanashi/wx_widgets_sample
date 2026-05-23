@@ -19,12 +19,6 @@ defmodule ElixirWxCameraViewer.Camera do
     :exit, _ -> {:error, :not_running}
   end
 
-  def save_snapshot(path) do
-    GenServer.call(__MODULE__, {:save_snapshot, path})
-  catch
-    :exit, _ -> {:error, :not_running}
-  end
-
   @impl true
   def init(opts) do
     state = %{capture: nil, frame: nil, error: nil, opts: opts, paused: false}
@@ -38,20 +32,6 @@ defmodule ElixirWxCameraViewer.Camera do
   def handle_call(:toggle_pause, _from, state) do
     next = %{state | paused: !state.paused}
     {:reply, {:ok, next.paused}, next}
-  end
-
-  def handle_call({:save_snapshot, _path}, _from, %{frame: nil} = state),
-    do: {:reply, {:error, :no_frame}, state}
-
-  def handle_call(
-        {:save_snapshot, path},
-        _from,
-        %{frame: %{data: data, width: w, height: h}} = state
-      ) do
-    image = :wxImage.new(w, h, data)
-    ok = :wxImage.saveFile(image, to_charlist(path))
-    :wxImage.destroy(image)
-    {:reply, if(ok, do: :ok, else: {:error, :save_failed}), state}
   end
 
   @impl true

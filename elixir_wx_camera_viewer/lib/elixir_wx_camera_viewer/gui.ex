@@ -16,12 +16,6 @@ defmodule ElixirWxCameraViewer.GUI do
     frame = :wxFrame.new(wx, -1, ~c"Elixir wx Camera Viewer", size: {900, 640})
     panel = :wxPanel.new(frame)
     image_box = :wxStaticBitmap.new(panel, -1, :wxBitmap.new(1, 1))
-    status = :wxStaticText.new(panel, -1, ~c"起動中...")
-
-    sizer = :wxBoxSizer.new(8)
-    :wxSizer.add(sizer, image_box, proportion: 1, flag: 8192)
-    :wxSizer.add(sizer, status, flag: 16, border: 8)
-    :wxPanel.setSizer(panel, sizer)
 
     :wxWindow.connect(panel, :size)
     :wxWindow.connect(panel, :char_hook)
@@ -39,7 +33,6 @@ defmodule ElixirWxCameraViewer.GUI do
        frame: frame,
        panel: panel,
        image_box: image_box,
-       status_label: status,
        timer: timer,
        paused: false,
        last_frame: nil
@@ -50,12 +43,8 @@ defmodule ElixirWxCameraViewer.GUI do
   def handle_info(:refresh, state) do
     state =
       case ElixirWxCameraViewer.Camera.latest_frame() do
-        {:ok, frame} ->
-          render_frame(frame, state)
-
-        {:error, reason} ->
-          :wxStaticText.setLabel(state.status_label, to_charlist(to_string(reason)))
-          state
+        {:ok, frame} -> render_frame(frame, state)
+        {:error, reason} -> put_status(state, to_string(reason))
       end
 
     timer = Process.send_after(self(), :refresh, @timer_ms)
@@ -87,13 +76,10 @@ defmodule ElixirWxCameraViewer.GUI do
   defp handle_key(32, state) do
     case ElixirWxCameraViewer.Camera.toggle_pause() do
       {:ok, paused} ->
-        msg = if(paused, do: "一時停止中", else: "再開")
-        :wxStaticText.setLabel(state.status_label, to_charlist(msg))
-        {:noreply, %{state | paused: paused}}
+        {:noreply, put_status(%{state | paused: paused}, if(paused, do: "一時停止中", else: "再開"))}
 
       {:error, _} ->
-        :wxStaticText.setLabel(state.status_label, ~c"カメラ制御エラー")
-        {:noreply, state}
+        {:noreply, put_status(state, "カメラ制御エラー")}
     end
   end
 
@@ -117,8 +103,7 @@ defmodule ElixirWxCameraViewer.GUI do
         _ -> "保存失敗"
       end
 
-    :wxStaticText.setLabel(state.status_label, to_charlist(msg))
-    {:noreply, state}
+    {:noreply, put_status(state, msg)}
   end
 
   defp render_frame(frame, state) do
@@ -130,18 +115,20 @@ defmodule ElixirWxCameraViewer.GUI do
 
   defp fit_bitmap(%{data: data, width: src_w, height: src_h}, panel) do
     {dst_w, dst_h} = :wxWindow.getClientSize(panel)
-    avail_h = max(dst_h - 40, 1)
     src_ratio = src_w / max(src_h, 1)
-    dst_ratio = dst_w / max(avail_h, 1)
+    dst_ratio = dst_w / max(dst_h, 1)
 
     {draw_w, draw_h} =
       if src_ratio > dst_ratio do
         w = max(dst_w, 1)
         {w, trunc(w / src_ratio)}
       else
-        h = max(avail_h, 1)
+        h = max(dst_h, 1)
         {trunc(h * src_ratio), h}
       end
+
+    :wxWindow.setSize(panel, 0, 0, max(dst_w, 1), max(dst_h, 1))
+    :wxWindow.setSize(stateful_image_box(panel), 0, 0, max(draw_w, 1), max(draw_h, 1))
 
     image = :wxImage.new(src_w, src_h, data)
     scaled = :wxImage.scale(image, max(draw_w, 1), max(draw_h, 1))
@@ -149,5 +136,15 @@ defmodule ElixirWxCameraViewer.GUI do
     :wxImage.destroy(scaled)
     :wxImage.destroy(image)
     bitmap
+  end
+
+  defp stateful_image_box(panel) do
+    [child | _] = :wxWindow.getChildren(panel)
+    child
+  end
+
+  defp put_status(state, msg) do
+    :wxFrame.setTitle(state.frame, to_charlist("Elixir wx Camera Viewer - " <> msg))
+    state
   end
 end

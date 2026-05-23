@@ -64,16 +64,38 @@ defmodule Mix.Tasks.Qa do
 end
 '''
 
-File.write!(qa_file, qa_source)
+if File.exists?(qa_file) do
+  IO.puts(:stderr, "Error: #{qa_file} が既に存在するため上書きしません。")
+  System.halt(1)
+else
+  File.write!(qa_file, qa_source)
+end
 
 mix_content = File.read!(mix_exs)
-unless String.contains?(mix_content, "def cli do") do
+unless String.contains?(mix_content, "qa: :test") do
   insert = "  def cli do\n    [preferred_envs: [qa: :test]]\n  end\n\n"
-  updated = String.replace(mix_content, ~r/^\s*def application do/m, insert <> "  def application do", global: false)
+  updated =
+    if String.contains?(mix_content, "def cli do") do
+      IO.puts(:stderr, "Error: 既存の def cli do があるため自動更新しません。qa: :test を手動で追加してください。")
+      System.halt(1)
+    else
+      String.replace(
+        mix_content,
+        ~r/^\s*def application do/m,
+        insert <> "  def application do",
+        global: false
+      )
+    end
+
+  if updated == mix_content do
+    IO.puts(:stderr, "Error: mix.exs へ qa: :test を安全に挿入できませんでした")
+    System.halt(1)
+  end
+
   File.write!(mix_exs, updated)
 end
 
-if File.exists?(test_file) and File.exists?(app_file) do
+if not File.exists?(test_file) and File.exists?(app_file) do
   app_module =
     basename
     |> String.split("_")

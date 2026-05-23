@@ -20,19 +20,30 @@ if qa_status != 0, do: System.halt(qa_status)
 if System.get_env("DISPLAY") in [nil, ""] do
   IO.puts("[smoke] DISPLAY が未設定のため GUI 起動確認をスキップします。")
   IO.puts("[smoke] GUI起動確認は DISPLAY が使える環境で次を実行してください:")
-  IO.puts("        timeout 5s mix run --no-halt")
+  IO.puts("        mix run --no-halt")
   System.halt(0)
 end
 
 IO.puts("[smoke] GUI起動スモークを実行します（5秒）...")
-status = run.("timeout", ["5s", "mix", "run", "--no-halt"])
+mix_exe = System.find_executable("mix") || "mix"
+port = Port.open({:spawn_executable, mix_exe}, [:binary, :exit_status, :use_stdio, :stderr_to_stdout, {:args, ["run", "--no-halt"]}, {:cd, project_dir}])
 
-cond do
-  status == 0 ->
-    IO.puts("[smoke] GUIスモーク完了")
-  status == 124 ->
-    IO.puts("[smoke] 5秒起動できたため成功（timeout終了）")
-  true ->
+result =
+  receive do
+    {^port, {:exit_status, status}} -> {:exited, status}
+  after
+    5_000 -> :alive
+  end
+
+case result do
+  {:exited, 0} ->
+    IO.puts("[smoke] GUIプロセスが終了コード0で終了")
+
+  {:exited, status} ->
     IO.puts(:stderr, "[smoke] GUIスモーク失敗 (exit: #{status})")
     System.halt(status)
+
+  :alive ->
+    Port.close(port)
+    IO.puts("[smoke] 5秒起動できたため成功")
 end

@@ -13,15 +13,46 @@ defmodule ElixirWxCameraViewer.Camera do
     :exit, _ -> {:error, :not_running}
   end
 
+  def toggle_pause do
+    GenServer.call(__MODULE__, :toggle_pause)
+  catch
+    :exit, _ -> {:error, :not_running}
+  end
+
+  def save_snapshot(path) do
+    GenServer.call(__MODULE__, {:save_snapshot, path})
+  catch
+    :exit, _ -> {:error, :not_running}
+  end
+
   @impl true
   def init(opts) do
-    state = %{capture: nil, frame: nil, error: nil, opts: opts}
+    state = %{capture: nil, frame: nil, error: nil, opts: opts, paused: false}
     Process.send_after(self(), :open_camera, 0)
     {:ok, state}
   end
 
   @impl true
   def handle_call(:latest_frame, _from, state), do: {:reply, frame_reply(state), state}
+
+  def handle_call(:toggle_pause, _from, state) do
+    next = %{state | paused: !state.paused}
+    {:reply, {:ok, next.paused}, next}
+  end
+
+  def handle_call({:save_snapshot, _path}, _from, %{frame: nil} = state),
+    do: {:reply, {:error, :no_frame}, state}
+
+  def handle_call(
+        {:save_snapshot, path},
+        _from,
+        %{frame: %{data: data, width: w, height: h}} = state
+      ) do
+    image = :wxImage.new(w, h, data)
+    ok = :wxImage.saveFile(image, to_charlist(path))
+    :wxImage.destroy(image)
+    {:reply, if(ok, do: :ok, else: {:error, :save_failed}), state}
+  end
 
   @impl true
   def handle_info(:open_camera, state) do
@@ -47,6 +78,11 @@ defmodule ElixirWxCameraViewer.Camera do
 
   def handle_info(:grab_frame, %{capture: nil} = state) do
     Process.send_after(self(), :open_camera, 1_000)
+    {:noreply, state}
+  end
+
+  def handle_info(:grab_frame, %{paused: true} = state) do
+    Process.send_after(self(), :grab_frame, @interval_ms)
     {:noreply, state}
   end
 

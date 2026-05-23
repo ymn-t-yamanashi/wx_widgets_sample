@@ -24,7 +24,8 @@ defmodule Tetris.Board do
 
   def clear_lines(board) do
     {kept, cleared} = Enum.split_with(board, fn row -> Enum.any?(row, &is_nil/1) end)
-    filler = for _ <- 1..length(cleared), do: for(_ <- 1..@width, do: nil)
+    filler_count = length(cleared)
+    filler = for _ <- 1..filler_count//1, do: for(_ <- 1..@width, do: nil)
     {filler ++ kept, length(cleared)}
   end
 

@@ -15,11 +15,21 @@ CAMERA_DEVICE=0 mix run --no-halt
 ## ONNX モデル
 
 - 配置先: `priv/models/hand_keypoint.onnx`
-- 入力: `1x3x224x224` (RGB, 0..1)
-- 出力: `1x21x3` (`x`, `y`, `score`)
-- しきい値: `0.35`
+- 配置先: `priv/models/palm_detection.onnx`
+- 入力: `1x224x224x3` (RGB, 0..1)
+- 主出力: `1x63` (21 keypoints x xyz)
 
 モデル未配置時は手認識を無効化し、カメラ表示のみ行います。
+
+### モデル取得スクリプト
+
+```bash
+chmod +x scripts/download_models.sh
+PALM_DETECTION_URL="<palm_detection.onnx のURL>" ./scripts/download_models.sh
+```
+
+- `HAND_KEYPOINT_URL` は未指定時にデフォルトURLを使用します。
+- `PALM_DETECTION_URL` は必須です（利用元ライセンスに従って指定してください）。
 
 ## テスト
 

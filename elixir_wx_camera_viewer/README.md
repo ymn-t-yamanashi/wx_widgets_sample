@@ -31,6 +31,7 @@ CAMERA_DEVICE=1 mix run --no-halt
 
 - `Space`: 一時停止 / 再開
 - `S`: 現在フレームを `snapshot_*.png` として保存
+- `R`: 録画開始 / 停止（`recording_*.mp4` を保存）
 - `Esc`: 終了
 
 映像はウィンドウサイズに合わせて縦横比を維持したまま自動フィット表示されます。

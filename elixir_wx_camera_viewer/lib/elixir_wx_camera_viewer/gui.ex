@@ -2,6 +2,7 @@ defmodule ElixirWxCameraViewer.GUI do
   @moduledoc false
 
   use GenServer
+  require Logger
   require Record
 
   Record.defrecord(:wxKey, Record.extract(:wxKey, from_lib: "wx/include/wx.hrl"))
@@ -89,6 +90,9 @@ defmodule ElixirWxCameraViewer.GUI do
 
   defp handle_key(?s, state), do: save_snapshot(state)
   defp handle_key(?S, state), do: save_snapshot(state)
+
+  defp handle_key(?r, state), do: toggle_recording(state)
+  defp handle_key(?R, state), do: toggle_recording(state)
   defp handle_key(_, state), do: {:noreply, state}
 
   defp save_snapshot(state) do
@@ -113,6 +117,14 @@ defmodule ElixirWxCameraViewer.GUI do
       end
 
     {:noreply, put_status(state, msg)}
+  end
+
+  defp toggle_recording(state) do
+    case ElixirWxCameraViewer.Camera.toggle_recording() do
+      {:ok, {:started, path}} -> {:noreply, put_status(state, "録画開始: #{path}")}
+      {:ok, {:stopped, path}} -> {:noreply, put_status(state, "録画停止: #{path}")}
+      {:error, reason} -> {:noreply, put_status(state, "録画エラー: #{reason}")}
+    end
   end
 
   defp render_frame(frame, state) do
@@ -153,6 +165,7 @@ defmodule ElixirWxCameraViewer.GUI do
   end
 
   defp put_status(state, msg) do
+    Logger.info("[camera_viewer] #{msg}")
     :wxFrame.setTitle(state.frame, to_charlist("Elixir wx Camera Viewer - " <> msg))
     state
   end

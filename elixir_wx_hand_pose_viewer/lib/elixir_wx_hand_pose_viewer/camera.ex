@@ -153,34 +153,49 @@ defmodule ElixirWxHandPoseViewer.Camera do
   defp process_frame(frame, %{model: nil}), do: draw_debug_text(frame, "MODEL NOT LOADED")
 
   defp process_frame(frame, state) do
-    {h, w, _} = Evision.Mat.shape(frame)
-    s = trunc(min(w, h) * 0.7)
-    x = max(div(w - s, 2), 0)
-    y = max(div(h - s, 2), 0)
-    roi = Evision.Mat.roi(frame, {x, y, s, s})
+    rois = hand_rois(frame)
 
-    case ElixirWxHandPoseViewer.HandInference.infer_debug(state.model, roi) do
-      {:ok, points, meta} when is_list(points) and points != [] ->
-        if rem(state.tick, 30) == 0,
-          do:
-            Logger.info(
-              "[detect] points=#{length(points)} score=#{inspect(meta[:hand_score])} sample=#{inspect(Enum.take(points, 3))}"
-            )
+    {drawn, detected_count} =
+      Enum.reduce(rois, {frame, 0}, fn {x, y, s, roi_label}, {acc, count} ->
+        roi = Evision.Mat.roi(frame, {x, y, s, s})
 
-        mapped = Enum.map(points, fn {px, py, sc} -> {x + px, y + py, sc} end)
+        case ElixirWxHandPoseViewer.HandInference.infer_debug(state.model, roi) do
+          {:ok, points, meta} when is_list(points) and points != [] ->
+            if rem(state.tick, 30) == 0 do
+              Logger.info(
+                "[detect] roi=#{roi_label} points=#{length(points)} score=#{inspect(meta[:hand_score])} sample=#{inspect(Enum.take(points, 3))}"
+              )
+            end
 
-        frame
-        |> draw_skeleton(mapped)
-        |> draw_debug_text("ORTEX ON")
+            mapped = Enum.map(points, fn {px, py, sc} -> {x + px, y + py, sc} end)
+            {draw_skeleton(acc, mapped), count + 1}
 
-      {:error, reason, meta} ->
-        if rem(state.tick, 30) == 0,
-          do: Logger.info("[detect:miss] reason=#{inspect(reason)} meta=#{inspect(meta)}")
+          {:error, reason, meta} ->
+            if rem(state.tick, 30) == 0 do
+              Logger.info("[detect:miss] roi=#{roi_label} reason=#{inspect(reason)} meta=#{inspect(meta)}")
+            end
 
-        draw_debug_text(frame, "NO HAND")
+            {acc, count}
+        end
+      end)
+
+    case detected_count do
+      0 -> draw_debug_text(drawn, "NO HAND")
+      1 -> draw_debug_text(drawn, "ONE HAND")
+      _ -> draw_debug_text(drawn, "TWO HANDS")
     end
   rescue
     _ -> draw_debug_text(frame, "INFER ERROR")
+  end
+
+  defp hand_rois(frame) do
+    {h, w, _} = Evision.Mat.shape(frame)
+    s = trunc(min(w, h) * 0.5)
+    y = max(div(h - s, 2), 0)
+    gap = trunc(s * 0.1)
+    left_x = max(div(w, 2) - s - div(gap, 2), 0)
+    right_x = min(div(w, 2) + div(gap, 2), max(w - s, 0))
+    [{left_x, y, s, :left}, {right_x, y, s, :right}]
   end
 
   defp draw_skeleton(frame, points) do

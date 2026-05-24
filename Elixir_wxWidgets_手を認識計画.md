@@ -1,4 +1,4 @@
-# Elixir + wxWidgets カメラアで手を認識プリ計画書
+# Elixir + wxWidgets カメラで手を認識プリ計画書
 
 ## プロジェクト概要
 - プロジェクト名: `elixir_wx_hand_pose_viewer`

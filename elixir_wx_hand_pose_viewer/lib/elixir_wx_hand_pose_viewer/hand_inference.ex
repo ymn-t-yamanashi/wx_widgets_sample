@@ -35,7 +35,10 @@ defmodule ElixirWxHandPoseViewer.HandInference do
           {:ok, model}
 
         {:error, reason} ->
-          Logger.warning("[hand_inference] cuda probe failed reason=#{inspect(reason)} -> fallback cpu")
+          Logger.warning(
+            "[hand_inference] cuda probe failed reason=#{inspect(reason)} -> fallback cpu"
+          )
+
           model = Ortex.load(path, [:cpu])
           :persistent_term.put({__MODULE__, :backend}, :cpu)
           {:ok, model}
@@ -101,7 +104,10 @@ defmodule ElixirWxHandPoseViewer.HandInference do
   defp postprocess({landmarks, hand_score, _handedness, _world}, width, height) do
     score = hand_score |> tensor_first_value() |> normalize_score()
     points = decode_landmarks(landmarks, width, height)
-    if points == [], do: {:error, :no_points}, else: {:ok, points, %{hand_score: score, point_count: length(points)}}
+
+    if points == [],
+      do: {:error, :no_points},
+      else: {:ok, points, %{hand_score: score, point_count: length(points)}}
   rescue
     _ -> {:error, :postprocess_failed}
   end

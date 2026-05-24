@@ -45,3 +45,10 @@ ENABLE_GPU=1 ORT_LIB_LOCATION=/path/to/libonnxruntime.so CAMERA_DEVICE=0 mix run
 
 - `ORT_LIB_LOCATION` には CUDA 対応 ONNX Runtime の共有ライブラリを指定してください。
 - 起動ログに `loaded providers=[:cuda, :cpu]` が出れば GPU 優先で動作しています。
+
+## キー操作
+
+- `ESC`: 終了
+- `Space`: 一時停止/再開
+- `S`: スナップショット保存
+- `V`: 映像表示 ON/OFF（推論は継続）

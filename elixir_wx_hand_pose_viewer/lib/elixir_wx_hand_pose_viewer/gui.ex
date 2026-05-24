@@ -40,6 +40,7 @@ defmodule ElixirWxHandPoseViewer.GUI do
        image_box: image_box,
        timer: timer,
        paused: false,
+       video_visible: true,
        last_frame: nil
      })}
   end
@@ -90,6 +91,8 @@ defmodule ElixirWxHandPoseViewer.GUI do
 
   defp handle_key(?s, state), do: save_snapshot(state)
   defp handle_key(?S, state), do: save_snapshot(state)
+  defp handle_key(?v, state), do: toggle_video(state)
+  defp handle_key(?V, state), do: toggle_video(state)
 
   defp handle_key(_, state), do: {:noreply, state}
 
@@ -118,11 +121,36 @@ defmodule ElixirWxHandPoseViewer.GUI do
   end
 
   defp render_frame(frame, state) do
-    bitmap = frame_to_bitmap(frame)
+    display_frame = if state.video_visible, do: frame, else: green_overlay_frame(frame)
+    bitmap = frame_to_bitmap(display_frame)
     :wxStaticBitmap.setBitmap(state.image_box, bitmap)
-    :wxWindow.setSize(state.image_box, 0, 0, frame.width, frame.height)
+    :wxWindow.setSize(state.image_box, 0, 0, display_frame.width, display_frame.height)
     :wxBitmap.destroy(bitmap)
     %{state | last_frame: frame}
+  end
+
+  defp green_overlay_frame(%{width: w, height: h, data: data}) do
+    %{width: w, height: h, data: keep_green_pixels(data)}
+  end
+
+  defp keep_green_pixels(data), do: keep_green_pixels(data, <<>>)
+
+  defp keep_green_pixels(<<r, g, b, rest::binary>>, acc) when g > 180 and r < 80 and b < 80 do
+    keep_green_pixels(rest, <<acc::binary, r, g, b>>)
+  end
+
+  defp keep_green_pixels(<<_r, _g, _b, rest::binary>>, acc) do
+    keep_green_pixels(rest, <<acc::binary, 0, 0, 0>>)
+  end
+
+  defp keep_green_pixels(<<>>, acc) do
+    acc
+  end
+
+  defp toggle_video(state) do
+    visible = not state.video_visible
+    msg = if visible, do: "映像表示: ON", else: "映像表示: OFF"
+    {:noreply, put_status(%{state | video_visible: visible}, msg)}
   end
 
   defp frame_to_bitmap(%{data: data, width: w, height: h}) do

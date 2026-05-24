@@ -1,5 +1,11 @@
 defmodule ElixirWxHandPoseViewer.Camera do
-  @moduledoc false
+  @moduledoc """
+  カメラキャプチャと手推論を担当する GenServer です。
+
+  - フレーム取得
+  - ROI 探索と手キーポイント推論
+  - スケルトン描画済みフレームの共有
+  """
   use GenServer
   require Logger
 
@@ -28,8 +34,25 @@ defmodule ElixirWxHandPoseViewer.Camera do
     {19, 20}
   ]
 
+  @doc """
+  カメラサーバーを起動します。
+  """
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+
+  @doc """
+  最新フレームを取得します。
+
+  戻り値:
+  - `{:ok, %{width: integer(), height: integer(), data: binary()}}`
+  - `{:error, reason}`
+  """
   def latest_frame, do: GenServer.call(__MODULE__, :latest_frame)
+
+  @doc """
+  一時停止状態をトグルします。
+
+  戻り値は `{:ok, paused?}` です。
+  """
   def toggle_pause, do: GenServer.call(__MODULE__, :toggle_pause)
 
   @impl true

@@ -1,5 +1,12 @@
 defmodule ElixirWxHandPoseViewer.GUI do
-  @moduledoc false
+  @moduledoc """
+  `:wx` ベースの表示・入力を扱う GenServer です。
+
+  主な役割:
+  - カメラフレームの描画
+  - キー入力処理（終了/一時停止/保存/映像表示切替）
+  - ステータス表示
+  """
 
   use GenServer
   require Logger
@@ -9,6 +16,9 @@ defmodule ElixirWxHandPoseViewer.GUI do
 
   @timer_ms 33
 
+  @doc """
+  GUIサーバーを起動します。
+  """
   def start_link(_opts), do: GenServer.start_link(__MODULE__, %{}, name: __MODULE__)
 
   @impl true

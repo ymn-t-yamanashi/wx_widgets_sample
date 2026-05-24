@@ -1,9 +1,17 @@
 defmodule ElixirWxHandPoseViewer.Application do
-  @moduledoc false
+  @moduledoc """
+  アプリケーションのエントリポイントです。
+
+  `:test` 環境ではGUI/カメラを起動せず、通常環境では
+  カメラキャプチャとGUIプロセスを supervision tree に登録します。
+  """
 
   use Application
 
   @impl true
+  @doc """
+  アプリケーションの supervision tree を起動します。
+  """
   def start(_type, _args) do
     children =
       if Mix.env() == :test do

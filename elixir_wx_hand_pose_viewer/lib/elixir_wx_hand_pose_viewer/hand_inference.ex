@@ -1,10 +1,20 @@
 defmodule ElixirWxHandPoseViewer.HandInference do
-  @moduledoc false
+  @moduledoc """
+  ONNX モデルのロードと手キーポイント推論を担当します。
+
+  入力画像の前処理、推論実行、座標の後処理までを 1 モジュールで完結させます。
+  """
   require Logger
 
   @model_path "priv/models/hand_keypoint.onnx"
   @input_size 224
 
+  @doc """
+  推論モデルをロードします。
+
+  `ENABLE_GPU=1`（または `ENABLE_DNN=1`）時は CUDA を試行し、
+  失敗した場合は CPU にフォールバックします。
+  """
   def load do
     path = Path.expand(@model_path, File.cwd!())
 
@@ -22,6 +32,14 @@ defmodule ElixirWxHandPoseViewer.HandInference do
     _ -> {:error, :load_failed}
   end
 
+  @doc """
+  現在の推論バックエンドを返します。
+
+  戻り値:
+  - `:gpu`
+  - `:cpu`
+  - `:unknown`
+  """
   def backend do
     :persistent_term.get({__MODULE__, :backend}, :unknown)
   end
@@ -62,6 +80,9 @@ defmodule ElixirWxHandPoseViewer.HandInference do
     gpu_flag in ["1", "true", "TRUE", "yes", "YES"]
   end
 
+  @doc """
+  ROI画像に対して推論を実行し、手キーポイントを返します。
+  """
   def infer(model, roi_mat) do
     case infer_debug(model, roi_mat) do
       {:ok, points, _meta} -> {:ok, points}
@@ -69,6 +90,11 @@ defmodule ElixirWxHandPoseViewer.HandInference do
     end
   end
 
+  @doc """
+  `infer/2` の詳細版です。
+
+  キーポイントに加えて、デバッグ向けメタ情報を返します。
+  """
   def infer_debug(model, roi_mat) do
     with {:ok, tensor, width, height} <- preprocess(roi_mat),
          outputs <- Ortex.run(model, tensor),

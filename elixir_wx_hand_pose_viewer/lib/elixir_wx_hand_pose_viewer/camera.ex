@@ -3,7 +3,8 @@ defmodule ElixirWxHandPoseViewer.Camera do
   use GenServer
   require Logger
 
-  @interval_ms 33
+  @interval_ms 16
+  @infer_every_n_frames 2
   @connections [
     {0, 1},
     {1, 2},
@@ -116,7 +117,8 @@ defmodule ElixirWxHandPoseViewer.Camera do
         Logger.info("[hand_inference] backend=#{ElixirWxHandPoseViewer.HandInference.backend()}")
         model
 
-      _ -> nil
+      _ ->
+        nil
     end
   end
 
@@ -149,7 +151,13 @@ defmodule ElixirWxHandPoseViewer.Camera do
   defp frame_reply(%{frame: frame}), do: {:ok, frame}
 
   defp process_and_store(frame, state) do
-    out = process_frame(frame, state)
+    out =
+      if rem(state.tick, @infer_every_n_frames) == 0 do
+        process_frame(frame, state)
+      else
+        draw_debug_text(frame, "TRACKING")
+      end
+
     put_frame(out, state)
   end
 
@@ -184,7 +192,9 @@ defmodule ElixirWxHandPoseViewer.Camera do
 
           {:error, reason, meta} ->
             if rem(state.tick, 30) == 0 do
-              Logger.info("[detect:miss] roi=#{roi_label} reason=#{inspect(reason)} meta=#{inspect(meta)}")
+              Logger.info(
+                "[detect:miss] roi=#{roi_label} reason=#{inspect(reason)} meta=#{inspect(meta)}"
+              )
             end
 
             acc
@@ -204,9 +214,9 @@ defmodule ElixirWxHandPoseViewer.Camera do
     detected_count = length(selected)
 
     case detected_count do
-      0 -> draw_debug_text(drawn, "NO HAND (#{backend_label()})")
-      1 -> draw_debug_text(drawn, "ONE HAND (#{backend_label()})")
-      _ -> draw_debug_text(drawn, "TWO HANDS (#{backend_label()})")
+      0 -> draw_debug_text(drawn, "NO HAND")
+      1 -> draw_debug_text(drawn, "ONE HAND")
+      _ -> draw_debug_text(drawn, "TWO HANDS")
     end
   rescue
     _ -> draw_debug_text(frame, "INFER ERROR")
@@ -214,9 +224,9 @@ defmodule ElixirWxHandPoseViewer.Camera do
 
   defp hand_rois(frame) do
     {h, w, _} = Evision.Mat.shape(frame)
-    s = trunc(min(w, h) * 0.5)
-    x_positions = [0.0, 0.2, 0.4, 0.6]
-    y_positions = [0.0, 0.22, 0.44]
+    s = trunc(min(w, h) * 0.52)
+    x_positions = [0.0, 0.32, 0.64]
+    y_positions = [0.0, 0.34]
 
     for y_ratio <- y_positions,
         x_ratio <- x_positions do
@@ -270,10 +280,13 @@ defmodule ElixirWxHandPoseViewer.Camera do
       |> Enum.count(fn idx ->
         {tip_x, tip_y, _} = Enum.at(points, idx)
         {wrist_x, wrist_y, _} = wrist
-        :math.sqrt((tip_x - wrist_x) * (tip_x - wrist_x) + (tip_y - wrist_y) * (tip_y - wrist_y)) > 28
+
+        :math.sqrt((tip_x - wrist_x) * (tip_x - wrist_x) + (tip_y - wrist_y) * (tip_y - wrist_y)) >
+          28
       end)
 
-    area > 1800 and area < 130_000 and ratio > 0.45 and ratio < 2.2 and spread > 1.03 and mean_tip > 14 and
+    area > 1800 and area < 130_000 and ratio > 0.45 and ratio < 2.2 and spread > 1.03 and
+      mean_tip > 14 and
       finger_count >= 2
   rescue
     _ -> false
@@ -316,14 +329,6 @@ defmodule ElixirWxHandPoseViewer.Camera do
     )
   rescue
     _ -> frame
-  end
-
-  defp backend_label do
-    case ElixirWxHandPoseViewer.HandInference.backend() do
-      :gpu -> "GPU"
-      :cpu -> "CPU"
-      _ -> "UNKNOWN"
-    end
   end
 
   defp put_frame(frame, state), do: %{state | frame: to_rgb_binary(frame), error: nil}

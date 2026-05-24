@@ -118,40 +118,18 @@ defmodule ElixirWxHandPoseViewer.GUI do
   end
 
   defp render_frame(frame, state) do
-    bitmap = fit_bitmap(frame, state.panel)
+    bitmap = frame_to_bitmap(frame)
     :wxStaticBitmap.setBitmap(state.image_box, bitmap)
+    :wxWindow.setSize(state.image_box, 0, 0, frame.width, frame.height)
     :wxBitmap.destroy(bitmap)
     %{state | last_frame: frame}
   end
 
-  defp fit_bitmap(%{data: data, width: src_w, height: src_h}, panel) do
-    {dst_w, dst_h} = :wxWindow.getClientSize(panel)
-    src_ratio = src_w / max(src_h, 1)
-    dst_ratio = dst_w / max(dst_h, 1)
-
-    {draw_w, draw_h} =
-      if src_ratio > dst_ratio do
-        w = max(dst_w, 1)
-        {w, trunc(w / src_ratio)}
-      else
-        h = max(dst_h, 1)
-        {trunc(h * src_ratio), h}
-      end
-
-    :wxWindow.setSize(panel, 0, 0, max(dst_w, 1), max(dst_h, 1))
-    :wxWindow.setSize(stateful_image_box(panel), 0, 0, max(draw_w, 1), max(draw_h, 1))
-
-    image = :wxImage.new(src_w, src_h, data)
-    scaled = :wxImage.scale(image, max(draw_w, 1), max(draw_h, 1))
-    bitmap = :wxBitmap.new(scaled)
-    :wxImage.destroy(scaled)
+  defp frame_to_bitmap(%{data: data, width: w, height: h}) do
+    image = :wxImage.new(w, h, data)
+    bitmap = :wxBitmap.new(image)
     :wxImage.destroy(image)
     bitmap
-  end
-
-  defp stateful_image_box(panel) do
-    [child | _] = :wxWindow.getChildren(panel)
-    child
   end
 
   defp put_status(state, msg) do

@@ -26,7 +26,8 @@ defmodule ElixirWxHandPoseViewer.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:evision, "~> 0.2"}
+      {:evision, "~> 0.2"},
+      {:ortex, "~> 0.1"}
     ]
   end
 end

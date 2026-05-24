@@ -4,6 +4,28 @@ defmodule ElixirWxHandPoseViewer.Camera do
   require Logger
 
   @interval_ms 33
+  @connections [
+    {0, 1},
+    {1, 2},
+    {2, 3},
+    {3, 4},
+    {0, 5},
+    {5, 6},
+    {6, 7},
+    {7, 8},
+    {0, 9},
+    {9, 10},
+    {10, 11},
+    {11, 12},
+    {0, 13},
+    {13, 14},
+    {14, 15},
+    {15, 16},
+    {0, 17},
+    {17, 18},
+    {18, 19},
+    {19, 20}
+  ]
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   def latest_frame, do: GenServer.call(__MODULE__, :latest_frame)
@@ -164,7 +186,18 @@ defmodule ElixirWxHandPoseViewer.Camera do
   defp draw_skeleton(frame, points) do
     green = {0, 255, 0}
 
-    Enum.reduce(points, frame, fn {x, y, _s}, acc ->
+    with_lines =
+      Enum.reduce(@connections, frame, fn {a, b}, acc ->
+        case {Enum.at(points, a), Enum.at(points, b)} do
+          {{x1, y1, _}, {x2, y2, _}} ->
+            Evision.line(acc, {x1, y1}, {x2, y2}, green, thickness: 2)
+
+          _ ->
+            acc
+        end
+      end)
+
+    Enum.reduce(points, with_lines, fn {x, y, _s}, acc ->
       Evision.circle(acc, {x, y}, 3, green, thickness: -1)
     end)
   rescue

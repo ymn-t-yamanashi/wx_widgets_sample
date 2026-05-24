@@ -11,12 +11,31 @@
   - 画像前処理（リサイズ、色変換、ROI切り出し）
   - 描画（線、点、テキスト重畳）
 
+- 主に使用している関数:
+  - `Evision.VideoCapture.videoCapture/1`: カメラデバイスを開く。
+  - `Evision.VideoCapture.read/1`: 1フレーム取得する。
+  - `Evision.VideoCapture.set/3`: 幅・高さ・FPS を設定する。
+  - `Evision.VideoCapture.release/1`: カメラリソースを解放する。
+  - `Evision.Mat.shape/1`: 行列のサイズ（高さ/幅/チャンネル）を取得する。
+  - `Evision.Mat.roi/2`: 画像からROI領域を切り出す。
+  - `Evision.Mat.to_binary/1`: Mat をバイナリへ変換する。
+  - `Evision.resize/2`: 画像をモデル入力サイズへリサイズする。
+  - `Evision.cvtColor/2`: BGR/RGB の色空間を変換する。
+  - `Evision.line/5`: 骨格線を描画する。
+  - `Evision.circle/5`: キーポイントを描画する。
+  - `Evision.putText/7`: ステータステキストを重畳する。
+
 ### `:ortex` (`~> 0.1`)
 - 目的: ONNX Runtime の Elixir バインディング。
 - このプロジェクトでの用途:
   - `hand_keypoint.onnx` のロード
   - ROI画像に対する推論実行
   - GPU(CUDA) / CPU の実行切替
+
+- 主に使用している関数:
+  - `Ortex.load/1`: 既定設定でモデルをロードする。
+  - `Ortex.load/2`: 実行プロバイダ（`[:cuda]` / `[:cpu]`）を指定してロードする。
+  - `Ortex.run/2`: テンソル入力に対して推論を実行する。
 
 ## 主要な推移依存（`mix.lock` 由来）
 
@@ -25,6 +44,13 @@
 - 用途:
   - 推論前のテンソル化（`u8 -> f32`、reshape、正規化）
   - 推論出力の後処理（flatten、座標復元）
+
+- 主に使用している関数:
+  - `Nx.from_binary/2`: 画像バイナリをテンソル化する。
+  - `Nx.reshape/2`: テンソル形状をモデル入力/出力向けに整える。
+  - `Nx.as_type/2`: `u8` から `f32` へ型変換する。
+  - `Nx.divide/2`: 画素値を `0..1` に正規化する。
+  - `Nx.to_flat_list/1`: 出力テンソルを平坦化して座標列へ変換する。
 
 ### `:rustler`
 - 目的: Elixir から Rust NIF を利用するための基盤。
@@ -64,6 +90,19 @@
   - ウィンドウ作成
   - 画像描画
   - キー入力処理
+
+- 主に使用している関数:
+  - `:wx.new/0`: wxシステムを初期化する。
+  - `:wxFrame.new/4`: メインウィンドウを作成する。
+  - `:wxPanel.new/1`: 描画用パネルを作成する。
+  - `:wxStaticBitmap.new/3`: 画像表示用ウィジェットを作成する。
+  - `:wxWindow.connect/2`, `:wxFrame.connect/2`: イベントハンドラを登録する。
+  - `:wxFrame.show/1`: ウィンドウを表示する。
+  - `:wxImage.new/3`, `:wxBitmap.new/1`: RGBバッファから描画可能オブジェクトを生成する。
+  - `:wxStaticBitmap.setBitmap/2`: 表示画像を更新する。
+  - `:wxWindow.setSize/5`: 表示領域サイズを更新する。
+  - `:wxFrame.setTitle/2`: ステータスをタイトルへ反映する。
+  - `:wxFrame.destroy/1`, `:wx.destroy/0`: 終了時にGUI資源を解放する。
 
 ### `:logger`
 - 目的: ログ出力。

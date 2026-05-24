@@ -134,6 +134,7 @@ defmodule ElixirWxHandPoseViewer.Camera do
     :ok
   end
 
+  # 手推論モデルをロードし、利用バックエンド情報をログ出力する。
   defp load_model do
     case ElixirWxHandPoseViewer.HandInference.load() do
       {:ok, model} ->
@@ -145,6 +146,7 @@ defmodule ElixirWxHandPoseViewer.Camera do
     end
   end
 
+  # カメラパラメータを設定し、フレーム取得ループを開始する。
   defp schedule_grab(cap, state) do
     Evision.VideoCapture.set(
       cap,
@@ -169,10 +171,12 @@ defmodule ElixirWxHandPoseViewer.Camera do
     {:noreply, %{state | capture: cap, error: nil}}
   end
 
+  # フレーム未取得時のAPI応答形式を統一する。
   defp frame_reply(%{frame: nil, error: err}) when is_binary(err), do: {:error, err}
   defp frame_reply(%{frame: nil}), do: {:error, "カメラ初期化中..."}
   defp frame_reply(%{frame: frame}), do: {:ok, frame}
 
+  # 推論間引きと描画を含む1フレーム処理を行う。
   defp process_and_store(frame, state) do
     out =
       if rem(state.tick, @infer_every_n_frames) == 0 do
@@ -184,8 +188,10 @@ defmodule ElixirWxHandPoseViewer.Camera do
     put_frame(out, state)
   end
 
+  # モデル未ロード時のプレースホルダー表示。
   defp process_frame(frame, %{model: nil}), do: draw_debug_text(frame, "MODEL NOT LOADED")
 
+  # 複数ROIを探索して手候補を選別し、スケルトン描画を行う。
   defp process_frame(frame, state) do
     rois = hand_rois(frame)
 
@@ -245,6 +251,7 @@ defmodule ElixirWxHandPoseViewer.Camera do
     _ -> draw_debug_text(frame, "INFER ERROR")
   end
 
+  # 探索用ROIを画面グリッド状に生成する。
   defp hand_rois(frame) do
     {h, w, _} = Evision.Mat.shape(frame)
     s = trunc(min(w, h) * 0.52)
@@ -259,16 +266,19 @@ defmodule ElixirWxHandPoseViewer.Camera do
     end
   end
 
+  # 候補同士の重なりを見て重複検出を抑制する。
   defp overlaps_any?(det, selected) do
     Enum.any?(selected, fn s -> iou(bbox(det.points), bbox(s.points)) > 0.3 end)
   end
 
+  # キーポイント群の外接矩形を返す。
   defp bbox(points) do
     xs = Enum.map(points, fn {x, _, _} -> x end)
     ys = Enum.map(points, fn {_, y, _} -> y end)
     {Enum.min(xs), Enum.min(ys), Enum.max(xs), Enum.max(ys)}
   end
 
+  # 2つの矩形のIoUを計算する。
   defp iou({ax1, ay1, ax2, ay2}, {bx1, by1, bx2, by2}) do
     ix1 = max(ax1, bx1)
     iy1 = max(ay1, by1)
@@ -283,8 +293,10 @@ defmodule ElixirWxHandPoseViewer.Camera do
     if denom <= 0, do: 0.0, else: inter / denom
   end
 
+  # 手らしさ判定の前提として必要点数を確認する。
   defp hand_like?(points) when length(points) < 21, do: false
 
+  # 幾何特徴量で顔などの誤検出を除外する。
   defp hand_like?(points) do
     {x1, y1, x2, y2} = bbox(points)
     w = max(x2 - x1, 1)
@@ -315,10 +327,12 @@ defmodule ElixirWxHandPoseViewer.Camera do
     _ -> false
   end
 
+  # 2点間のユークリッド距離を返す。
   defp dist({x1, y1, _}, {x2, y2, _}) do
     :math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
   end
 
+  # キーポイント同士を線で結び、節点を描画する。
   defp draw_skeleton(frame, points) do
     green = {0, 255, 0}
 
@@ -340,6 +354,7 @@ defmodule ElixirWxHandPoseViewer.Camera do
     _ -> frame
   end
 
+  # フレーム左上へステータステキストを重畳する。
   defp draw_debug_text(frame, text) do
     Evision.putText(
       frame,
@@ -354,8 +369,10 @@ defmodule ElixirWxHandPoseViewer.Camera do
     _ -> frame
   end
 
+  # 内部MatをGUI描画向けのRGBバイナリへ変換して保持する。
   defp put_frame(frame, state), do: %{state | frame: to_rgb_binary(frame), error: nil}
 
+  # BGRのMatをRGBバイナリ形式へ変換する。
   defp to_rgb_binary(frame) do
     rgb = Evision.cvtColor(frame, Evision.Constant.cv_COLOR_BGR2RGB())
     {h, w, _} = Evision.Mat.shape(rgb)

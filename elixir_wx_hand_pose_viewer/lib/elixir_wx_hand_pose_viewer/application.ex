@@ -34,6 +34,7 @@ defmodule ElixirWxHandPoseViewer.Application do
     )
   end
 
+  # CAMERA_DEVICE の文字列入力を安全にデバイス番号へ変換する。
   defp parse_device(text) do
     case Integer.parse(to_string(text)) do
       {n, ""} when n >= 0 -> n

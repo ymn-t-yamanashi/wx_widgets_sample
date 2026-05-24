@@ -86,6 +86,7 @@ defmodule ElixirWxHandPoseViewer.GUI do
 
   def handle_info(_, state), do: {:noreply, state}
 
+  # キーコードに応じた操作（終了・一時停止・保存・表示切替）へ振り分ける。
   defp handle_key(27, state),
     do: handle_info({:wx, nil, nil, nil, {:wxClose, :close_window}}, state)
 
@@ -106,6 +107,7 @@ defmodule ElixirWxHandPoseViewer.GUI do
 
   defp handle_key(_, state), do: {:noreply, state}
 
+  # 現在の表示フレームをPNGとして保存する。
   defp save_snapshot(state) do
     ts =
       NaiveDateTime.utc_now()
@@ -130,6 +132,7 @@ defmodule ElixirWxHandPoseViewer.GUI do
     {:noreply, put_status(state, msg)}
   end
 
+  # 映像ON/OFF状態に応じて表示用フレームを作成して描画する。
   defp render_frame(frame, state) do
     display_frame = if state.video_visible, do: frame, else: green_overlay_frame(frame)
     bitmap = frame_to_bitmap(display_frame)
@@ -139,30 +142,37 @@ defmodule ElixirWxHandPoseViewer.GUI do
     %{state | last_frame: frame}
   end
 
+  # 元フレームから緑のオーバーレイ成分のみを残す。
   defp green_overlay_frame(%{width: w, height: h, data: data}) do
     %{width: w, height: h, data: keep_green_pixels(data)}
   end
 
+  # 1ピクセル単位で緑成分を抽出する。
   defp keep_green_pixels(data), do: keep_green_pixels(data, <<>>)
 
+  # 緑ピクセル条件に一致した画素だけを残す。
   defp keep_green_pixels(<<r, g, b, rest::binary>>, acc) when g > 180 and r < 80 and b < 80 do
     keep_green_pixels(rest, <<acc::binary, r, g, b>>)
   end
 
+  # 緑以外の画素は黒へ落とす。
   defp keep_green_pixels(<<_r, _g, _b, rest::binary>>, acc) do
     keep_green_pixels(rest, <<acc::binary, 0, 0, 0>>)
   end
 
+  # 線形走査の終端。
   defp keep_green_pixels(<<>>, acc) do
     acc
   end
 
+  # 映像表示フラグを切り替えて状態をタイトルへ反映する。
   defp toggle_video(state) do
     visible = not state.video_visible
     msg = if visible, do: "映像表示: ON", else: "映像表示: OFF"
     {:noreply, put_status(%{state | video_visible: visible}, msg)}
   end
 
+  # RGBバイナリからwxBitmapを生成する。
   defp frame_to_bitmap(%{data: data, width: w, height: h}) do
     image = :wxImage.new(w, h, data)
     bitmap = :wxBitmap.new(image)
@@ -170,6 +180,7 @@ defmodule ElixirWxHandPoseViewer.GUI do
     bitmap
   end
 
+  # ウィンドウタイトルへ現在ステータスを反映する。
   defp put_status(state, msg) do
     Logger.info("[camera_viewer] #{msg}")
     :wxFrame.setTitle(state.frame, to_charlist("Elixir wx Hand Pose Viewer - " <> msg))

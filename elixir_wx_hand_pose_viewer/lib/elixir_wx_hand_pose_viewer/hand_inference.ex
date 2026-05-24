@@ -44,6 +44,7 @@ defmodule ElixirWxHandPoseViewer.HandInference do
     :persistent_term.get({__MODULE__, :backend}, :unknown)
   end
 
+  # GPU要求時はCUDA単独ロードを試し、失敗時はCPUへフォールバックする。
   defp load_with_provider_fallback(path) do
     if gpu_requested?() do
       case try_load(path, [:cuda]) do
@@ -69,12 +70,14 @@ defmodule ElixirWxHandPoseViewer.HandInference do
     end
   end
 
+  # 例外を捕捉してロード失敗理由を呼び出し元へ返せる形にする。
   defp try_load(path, providers) do
     {:ok, Ortex.load(path, providers)}
   rescue
     e -> {:error, e}
   end
 
+  # GPU利用を有効化する環境変数の真偽を判定する。
   defp gpu_requested? do
     gpu_flag = System.get_env("ENABLE_GPU") || System.get_env("ENABLE_DNN") || "0"
     gpu_flag in ["1", "true", "TRUE", "yes", "YES"]
@@ -108,6 +111,7 @@ defmodule ElixirWxHandPoseViewer.HandInference do
     _ -> {:error, :inference_failed, %{}}
   end
 
+  # ROIをモデル入力形式 (1x224x224x3, float32, 0..1) へ変換する。
   defp preprocess(roi_mat) do
     rgb = Evision.cvtColor(roi_mat, Evision.Constant.cv_COLOR_BGR2RGB())
     {h, w, _} = Evision.Mat.shape(rgb)
@@ -127,6 +131,7 @@ defmodule ElixirWxHandPoseViewer.HandInference do
     _ -> {:error, :preprocess_failed}
   end
 
+  # モデル出力からランドマークとメタ情報を抽出する。
   defp postprocess({landmarks, hand_score, _handedness, _world}, width, height) do
     score = hand_score |> tensor_first_value() |> normalize_score()
     points = decode_landmarks(landmarks, width, height)
@@ -144,6 +149,7 @@ defmodule ElixirWxHandPoseViewer.HandInference do
   defp postprocess(landmarks, width, height),
     do: {:ok, decode_landmarks(landmarks, width, height), %{hand_score: nil}}
 
+  # ランドマーク配列を画面座標へスケールする。
   defp decode_landmarks(landmarks, width, height) do
     landmarks
     |> Nx.to_flat_list()
@@ -153,19 +159,24 @@ defmodule ElixirWxHandPoseViewer.HandInference do
     end)
   end
 
+  # スコアがロジットの場合に備えて 0..1 へ正規化する。
   defp normalize_score(v) when v >= 0.0 and v <= 1.0, do: v
   defp normalize_score(v), do: 1.0 / (1.0 + :math.exp(-v))
 
+  # モデル出力値のスケール差異に対応して X 座標へ変換する。
   defp scale_x(x, width) when x >= 0.0 and x <= 1.0, do: clamp(round(x * width), 0, width - 1)
   defp scale_x(x, width), do: clamp(round(x * width / @input_size), 0, width - 1)
+  # モデル出力値のスケール差異に対応して Y 座標へ変換する。
   defp scale_y(y, height) when y >= 0.0 and y <= 1.0, do: clamp(round(y * height), 0, height - 1)
   defp scale_y(y, height), do: clamp(round(y * height / @input_size), 0, height - 1)
 
+  # Zを疑似的な信頼度へ変換して描画ロジックに渡す。
   defp score_from_z(z) do
     # Landmark-only model has no per-point confidence, so expose pseudo score.
     1.0 / (1.0 + abs(z))
   end
 
+  # スカラー扱いしたいテンソルから先頭要素を取り出す。
   defp tensor_first_value(tensor) do
     case Nx.to_flat_list(tensor) do
       [v | _] -> v
@@ -173,6 +184,7 @@ defmodule ElixirWxHandPoseViewer.HandInference do
     end
   end
 
+  # 値を[min, max]に収める。
   defp clamp(v, min_v, _max_v) when v < min_v, do: min_v
   defp clamp(v, _min_v, max_v) when v > max_v, do: max_v
   defp clamp(v, _min_v, _max_v), do: v

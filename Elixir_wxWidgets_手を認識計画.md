@@ -15,6 +15,13 @@
 - フレーム受け渡しは「最新1フレームのみ保持」を原則とし、古いフレームは破棄する
 - フレーム形式は RGB に正規化してから描画する
 - 対応OSは Linux を優先し、`/dev/video*` の利用を前提にする
+- ONNX 推論は `Evision.DNN` を第一候補にしない。`Ortex`（ONNX Runtime バインディング）を第一候補とする
+
+## Elixir実績（調査結果）
+- `Ortex` は Elixir から ONNX Runtime を呼び出す実績のあるライブラリで、ONNX モデルの読み込みと推論実行が可能
+- `Nx` 公式リポジトリ群でも ONNX 連携先として `Ortex` が案内されている
+- Elixir記事・実装例でも `Ortex` を使った事前学習モデル推論の事例が確認できる
+- 結論: 本件の手認識は `Ortex` を優先し、`Evision.DNN` は互換性問題が出た場合の非採用方針とする
 
 ## 前提環境（Linux）
 - OpenCV を有効化した `Evision` がビルド可能であること
@@ -44,7 +51,7 @@
 
 ## 実行プラン
 0. 手認識方式の事前選定（Phase 0）
-- 採用方式（決定）: OpenCV DNN（`Evision.dnn`）+ ONNX手キーポイントモデル
+- 採用方式（決定）: `Ortex`（ONNX Runtime）+ ONNX手キーポイントモデル
 - 採用モデル情報（固定）
   - モデル名: Hand Keypoint 21 (ONNX)
   - バージョン: v1

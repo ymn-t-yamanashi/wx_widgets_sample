@@ -6,6 +6,9 @@
 
 ### `:evision` (`~> 0.2`)
 - 目的: OpenCV の Elixir バインディング。
+- 公式:
+  - https://hex.pm/packages/evision
+  - https://github.com/cocoa-xu/evision
 - このプロジェクトでの用途:
   - カメラ入力 (`Evision.VideoCapture`)
   - 画像前処理（リサイズ、色変換、ROI切り出し）
@@ -27,6 +30,9 @@
 
 ### `:ortex` (`~> 0.1`)
 - 目的: ONNX Runtime の Elixir バインディング。
+- 公式:
+  - https://hex.pm/packages/ortex
+  - https://github.com/elixir-nx/ortex
 - このプロジェクトでの用途:
   - `hand_keypoint.onnx` のロード
   - ROI画像に対する推論実行
@@ -41,6 +47,9 @@
 
 ### `:nx`
 - 目的: 数値テンソル演算ライブラリ。
+- 公式:
+  - https://hex.pm/packages/nx
+  - https://github.com/elixir-nx/nx
 - 用途:
   - 推論前のテンソル化（`u8 -> f32`、reshape、正規化）
   - 推論出力の後処理（flatten、座標復元）
@@ -54,31 +63,49 @@
 
 ### `:rustler`
 - 目的: Elixir から Rust NIF を利用するための基盤。
+- 公式:
+  - https://hex.pm/packages/rustler
+  - https://github.com/rusterlium/rustler
 - 用途:
   - `ortex` のネイティブ実装（ONNX Runtime呼び出し）を支える。
 
 ### `:elixir_make`
 - 目的: ネイティブコードのビルド補助。
+- 公式:
+  - https://hex.pm/packages/elixir_make
+  - https://github.com/elixir-lang/elixir_make
 - 用途:
   - `evision` / `ortex` のビルド時に利用される。
 
 ### `:telemetry`
 - 目的: 観測イベントの共通基盤。
+- 公式:
+  - https://hex.pm/packages/telemetry
+  - https://github.com/beam-telemetry/telemetry
 - 用途:
   - `nx` 等の内部依存として読み込まれる。
 
 ### `:castore`
 - 目的: 証明書ストア提供。
+- 公式:
+  - https://hex.pm/packages/castore
+  - https://github.com/elixir-mint/castore
 - 用途:
   - 依存ライブラリ内での通信関連処理を補助。
 
 ### `:complex`
 - 目的: 複素数サポート。
+- 公式:
+  - https://hex.pm/packages/complex
+  - https://github.com/elixir-nx/complex
 - 用途:
   - `nx` の依存として利用。
 
 ### `:jason`
 - 目的: JSONエンコード/デコード。
+- 公式:
+  - https://hex.pm/packages/jason
+  - https://github.com/michalmuskala/jason
 - 用途:
   - `rustler` 依存経由で利用。
 
@@ -86,6 +113,9 @@
 
 ### `:wx`
 - 目的: wxWidgets GUI バインディング（Erlang/OTP同梱）。
+- 公式:
+  - https://www.erlang.org/doc/apps/wx/wx_chapter.html
+  - https://www.wxwidgets.org/
 - このプロジェクトでの用途:
   - ウィンドウ作成
   - 画像描画
@@ -106,6 +136,8 @@
 
 ### `:logger`
 - 目的: ログ出力。
+- 公式:
+  - https://www.erlang.org/doc/apps/kernel/logger_chapter.html
 - このプロジェクトでの用途:
   - 推論状態、検出結果、エラーの可視化
 

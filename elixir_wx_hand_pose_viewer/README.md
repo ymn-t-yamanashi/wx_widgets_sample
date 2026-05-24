@@ -36,3 +36,12 @@ PALM_DETECTION_URL="<palm_detection.onnx のURL>" ./scripts/download_models.sh
 ```bash
 mix qa
 ```
+
+## GPU 実行
+
+```bash
+ENABLE_GPU=1 ORT_LIB_LOCATION=/path/to/libonnxruntime.so CAMERA_DEVICE=0 mix run --no-halt
+```
+
+- `ORT_LIB_LOCATION` には CUDA 対応 ONNX Runtime の共有ライブラリを指定してください。
+- 起動ログに `loaded providers=[:cuda, :cpu]` が出れば GPU 優先で動作しています。

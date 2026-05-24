@@ -1,5 +1,6 @@
 defmodule ElixirWxHandPoseViewer.HandInference do
   @moduledoc false
+  require Logger
 
   @model_path "priv/models/hand_keypoint.onnx"
   @input_size 224
@@ -15,13 +16,47 @@ defmodule ElixirWxHandPoseViewer.HandInference do
         {:error, :ortex_unavailable}
 
       true ->
-        case Ortex.load(path) do
-          {:ok, model} -> {:ok, model}
-          model -> {:ok, model}
-        end
+        load_with_provider_fallback(path)
     end
   rescue
     _ -> {:error, :load_failed}
+  end
+
+  def backend do
+    :persistent_term.get({__MODULE__, :backend}, :unknown)
+  end
+
+  defp load_with_provider_fallback(path) do
+    if gpu_requested?() do
+      case try_load(path, [:cuda]) do
+        {:ok, model} ->
+          :persistent_term.put({__MODULE__, :backend}, :gpu)
+          Logger.info("[hand_inference] loaded providers=[:cuda] (GPU active)")
+          {:ok, model}
+
+        {:error, reason} ->
+          Logger.warning("[hand_inference] cuda probe failed reason=#{inspect(reason)} -> fallback cpu")
+          model = Ortex.load(path, [:cpu])
+          :persistent_term.put({__MODULE__, :backend}, :cpu)
+          {:ok, model}
+      end
+    else
+      model = Ortex.load(path, [:cpu])
+      :persistent_term.put({__MODULE__, :backend}, :cpu)
+      Logger.info("[hand_inference] loaded providers=[:cpu]")
+      {:ok, model}
+    end
+  end
+
+  defp try_load(path, providers) do
+    {:ok, Ortex.load(path, providers)}
+  rescue
+    e -> {:error, e}
+  end
+
+  defp gpu_requested? do
+    gpu_flag = System.get_env("ENABLE_GPU") || System.get_env("ENABLE_DNN") || "0"
+    gpu_flag in ["1", "true", "TRUE", "yes", "YES"]
   end
 
   def infer(model, roi_mat) do

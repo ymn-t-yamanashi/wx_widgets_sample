@@ -112,7 +112,10 @@ defmodule ElixirWxHandPoseViewer.Camera do
 
   defp load_model do
     case ElixirWxHandPoseViewer.HandInference.load() do
-      {:ok, model} -> model
+      {:ok, model} ->
+        Logger.info("[hand_inference] backend=#{ElixirWxHandPoseViewer.HandInference.backend()}")
+        model
+
       _ -> nil
     end
   end
@@ -155,8 +158,8 @@ defmodule ElixirWxHandPoseViewer.Camera do
   defp process_frame(frame, state) do
     rois = hand_rois(frame)
 
-    {drawn, detected_count} =
-      Enum.reduce(rois, {frame, 0}, fn {x, y, s, roi_label}, {acc, count} ->
+    detections =
+      Enum.reduce(rois, [], fn {x, y, s, roi_label}, acc ->
         roi = Evision.Mat.roi(frame, {x, y, s, s})
 
         case ElixirWxHandPoseViewer.HandInference.infer_debug(state.model, roi) do
@@ -168,21 +171,42 @@ defmodule ElixirWxHandPoseViewer.Camera do
             end
 
             mapped = Enum.map(points, fn {px, py, sc} -> {x + px, y + py, sc} end)
-            {draw_skeleton(acc, mapped), count + 1}
+
+            if hand_like?(mapped) do
+              [%{points: mapped, score: meta[:hand_score] || 0.0, roi: roi_label} | acc]
+            else
+              if rem(state.tick, 30) == 0 do
+                Logger.info("[detect:reject] roi=#{roi_label} reason=:not_hand_shape")
+              end
+
+              acc
+            end
 
           {:error, reason, meta} ->
             if rem(state.tick, 30) == 0 do
               Logger.info("[detect:miss] roi=#{roi_label} reason=#{inspect(reason)} meta=#{inspect(meta)}")
             end
 
-            {acc, count}
+            acc
         end
       end)
 
+    selected =
+      detections
+      |> Enum.sort_by(& &1.score, :desc)
+      |> Enum.reduce([], fn det, acc ->
+        if overlaps_any?(det, acc), do: acc, else: [det | acc]
+      end)
+      |> Enum.reverse()
+      |> Enum.take(2)
+
+    drawn = Enum.reduce(selected, frame, fn det, acc -> draw_skeleton(acc, det.points) end)
+    detected_count = length(selected)
+
     case detected_count do
-      0 -> draw_debug_text(drawn, "NO HAND")
-      1 -> draw_debug_text(drawn, "ONE HAND")
-      _ -> draw_debug_text(drawn, "TWO HANDS")
+      0 -> draw_debug_text(drawn, "NO HAND (#{backend_label()})")
+      1 -> draw_debug_text(drawn, "ONE HAND (#{backend_label()})")
+      _ -> draw_debug_text(drawn, "TWO HANDS (#{backend_label()})")
     end
   rescue
     _ -> draw_debug_text(frame, "INFER ERROR")
@@ -191,11 +215,72 @@ defmodule ElixirWxHandPoseViewer.Camera do
   defp hand_rois(frame) do
     {h, w, _} = Evision.Mat.shape(frame)
     s = trunc(min(w, h) * 0.5)
-    y = max(div(h - s, 2), 0)
-    gap = trunc(s * 0.1)
-    left_x = max(div(w, 2) - s - div(gap, 2), 0)
-    right_x = min(div(w, 2) + div(gap, 2), max(w - s, 0))
-    [{left_x, y, s, :left}, {right_x, y, s, :right}]
+    x_positions = [0.0, 0.2, 0.4, 0.6]
+    y_positions = [0.0, 0.22, 0.44]
+
+    for y_ratio <- y_positions,
+        x_ratio <- x_positions do
+      x = min(max(trunc(w * x_ratio), 0), max(w - s, 0))
+      y = min(max(trunc(h * y_ratio), 0), max(h - s, 0))
+      {x, y, s, "#{x_ratio}_#{y_ratio}"}
+    end
+  end
+
+  defp overlaps_any?(det, selected) do
+    Enum.any?(selected, fn s -> iou(bbox(det.points), bbox(s.points)) > 0.3 end)
+  end
+
+  defp bbox(points) do
+    xs = Enum.map(points, fn {x, _, _} -> x end)
+    ys = Enum.map(points, fn {_, y, _} -> y end)
+    {Enum.min(xs), Enum.min(ys), Enum.max(xs), Enum.max(ys)}
+  end
+
+  defp iou({ax1, ay1, ax2, ay2}, {bx1, by1, bx2, by2}) do
+    ix1 = max(ax1, bx1)
+    iy1 = max(ay1, by1)
+    ix2 = min(ax2, bx2)
+    iy2 = min(ay2, by2)
+    iw = max(ix2 - ix1, 0)
+    ih = max(iy2 - iy1, 0)
+    inter = iw * ih
+    area_a = max(ax2 - ax1, 0) * max(ay2 - ay1, 0)
+    area_b = max(bx2 - bx1, 0) * max(by2 - by1, 0)
+    denom = area_a + area_b - inter
+    if denom <= 0, do: 0.0, else: inter / denom
+  end
+
+  defp hand_like?(points) when length(points) < 21, do: false
+
+  defp hand_like?(points) do
+    {x1, y1, x2, y2} = bbox(points)
+    w = max(x2 - x1, 1)
+    h = max(y2 - y1, 1)
+    area = w * h
+    ratio = w / h
+
+    wrist = Enum.at(points, 0)
+    tips = [4, 8, 12, 16, 20] |> Enum.map(&Enum.at(points, &1))
+    dists = Enum.map(tips, &dist(wrist, &1))
+    spread = Enum.max(dists) / max(Enum.min(dists), 1.0)
+    mean_tip = Enum.sum(dists) / max(length(dists), 1)
+
+    finger_count =
+      [4, 8, 12, 16, 20]
+      |> Enum.count(fn idx ->
+        {tip_x, tip_y, _} = Enum.at(points, idx)
+        {wrist_x, wrist_y, _} = wrist
+        :math.sqrt((tip_x - wrist_x) * (tip_x - wrist_x) + (tip_y - wrist_y) * (tip_y - wrist_y)) > 28
+      end)
+
+    area > 1800 and area < 130_000 and ratio > 0.45 and ratio < 2.2 and spread > 1.03 and mean_tip > 14 and
+      finger_count >= 2
+  rescue
+    _ -> false
+  end
+
+  defp dist({x1, y1, _}, {x2, y2, _}) do
+    :math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
   end
 
   defp draw_skeleton(frame, points) do
@@ -231,6 +316,14 @@ defmodule ElixirWxHandPoseViewer.Camera do
     )
   rescue
     _ -> frame
+  end
+
+  defp backend_label do
+    case ElixirWxHandPoseViewer.HandInference.backend() do
+      :gpu -> "GPU"
+      :cpu -> "CPU"
+      _ -> "UNKNOWN"
+    end
   end
 
   defp put_frame(frame, state), do: %{state | frame: to_rgb_binary(frame), error: nil}
